@@ -33,9 +33,7 @@ For information about architecture of the older, pre-provisioned service, see
 
 <%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
 
-<%= partial vars.path_to_partials + '/services/service_networks_table', :locals => {
-  :app_runtime_full => vars.app_runtime_full,
-  :product_short => "RabbitMQ"} %>
+<%= partial vars.path_to_partials + '/services/service_networks_table', :locals => { :app_runtime_full => vars.app_runtime_full, :product_short => "RabbitMQ"} %>
 
 <br>
 Regardless of the specific network layout, the operator must ensure network rules are set up so that
