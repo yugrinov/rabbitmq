@@ -151,9 +151,7 @@ in the BOSH documentation.
 
 <%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
 
-<%= partial vars.path_to_partials + '/services/release-policy', :locals => {
-  :os_name => "RabbitMQ"
-} %>
+<%= partial vars.path_to_partials + '/services/release-policy', :locals => { :os_name => "RabbitMQ"} %>
 
 The <%= vars.product_short %> tile uses floating stemcells in v1.14.0 and later.
 This means that the tile can be updated to use the latest minor version of a stemcell,
