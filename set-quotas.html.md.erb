@@ -8,7 +8,4 @@ owner: London Services
 
 <strong><%= modified_date %></strong>
 
-<%= partial vars.path_to_partials + '/services/set_quotas',:locals => {
-  :product_full => vars.product_full,
-  :product_short => vars.product_short,
-  :tile_name => vars.tile_name}%>
+<%= partial vars.path_to_partials + '/services/set_quotas',:locals => {:product_full => vars.product_full,:product_short => vars.product_short,:tile_name => vars.tile_name}%>
