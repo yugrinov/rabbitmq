@@ -1,0 +1,214 @@
+---
+title: Enabling OAuth for RabbitMQ
+owner: RabbitMQ
+---
+
+This topic explains how to enable OAuth 2.0.
+This enables developers to access the RabbitMQ Management UI using their <%= vars.app_runtime_full %>
+credentials.
+
+
+## <a id='overview'></a> Overview
+
+OAuth enables developers to access the RabbitMQ Management UI using their
+<%= vars.app_runtime_abbr %> credentials instead of using the binding credentials from a service key.
+After enabling OAuth, developers are authenticated through a JSON Web Token (JWT) encoded OAuth
+access token obtained from User Account and Authentication (UAA).
+
+<p class="note">
+  <strong>Note:</strong> Enabling OAuth does not remove user credentials from service keys or from
+  the internal backend of existing <%= vars.product_short %> instances.
+  However, you can no longer use these credentials to access the RabbitMQ Management UI.
+</p>
+
+<p class="note warning">
+  <strong>Warning:</strong> Manually rotating the JWT signing key using the UAA API is not supported.
+  Doing so renders RabbitMQ Management UI inaccessible.
+</p>
+
+To configure OAuth for an on-demand offering:
+
+1. [Configure UAA Groups for RabbitMQ](#configure-uaa-groups)
+1. [Configure OAuth in <%= vars.ops_manager %>](#configure-oauth)
+
+
+## <a id='configure-uaa-groups'></a> Configure UAA Groups for RabbitMQ
+
+1. [Get Admin User Credentials for UAA](#uaa-admin-user)
+1. [Install and Set up UAAC](#install-uaac)
+1. [Create UAA Groups](#create-rmq-uaa-group)
+1. [Configure Users for the RabbitMQ UAA Groups](#configure-users)
+
+
+### <a id='uaa-admin-user'></a> Get Admin User Credentials for UAA
+
+To fetch the UAA Admin Client secret from the <%= vars.ops_manager %> UI:
+
+1. Click on the <%= vars.app_runtime_full %> tile.
+1. Click the **Credentials** tab.
+    ![Screenshot of the <%= vars.app_runtime_full %> tile UI in <%= vars.ops_manager %>.
+    The location of the Credentials tab is shown with a red circle.
+    The Credentials tab is the third tab from the left, after 'Settings' and 'Status'.](/images/oauth-create-uaa-group-1.png)
+1. Locate the Admin Client Credentials in the UAA job.
+    ![Screenshot of the <%= vars.app_runtime_full %> tile UI in <%= vars.ops_manager %>.
+    There is a list of credential types and, next to it, a list of corresponding links.
+    The location of the link for Admin Client Credentials is shown with a red circle.](/images/oauth-create-uaa-group-2.png)
+1. Click **Link to Credential** next to **Admin Client Credentials**.
+1. Record the text in the identity field (`UAA-ADMIN-CLIENT-IDENTITY` in the next step) and password
+field (`UAA-ADMIN-CLIENT-SECRET` in the next step).
+
+
+### <a id='install-uaac'></a> Install and Set up UAAC
+
+To install and set up UAAC:
+
+1. Install UAAC by running:
+
+    ```
+    gem install cf-uaac
+    ```
+
+1. Set up UAAC by running:
+
+    ```
+    uaac target UAA-URL
+    ```
+    ```
+    uaac token client get UAA-ADMIN-CLIENT-IDENTITY -s UAA-ADMIN-CLIENT-SECRET
+    ```
+    Where:
+    * `UAA-URL` is the UAA URL.
+    * `UAA-ADMIN-CLIENT-IDENTITY` and `UAA-ADMIN-CLIENT-SECRET` are from the text you recorded in
+    [Get Admin User Credentials for UAA](#uaa-admin-user) above.
+
+
+### <a id='create-rmq-uaa-group'></a> Create a UAA Group
+
+You must create a group for each space in <%= vars.app_runtime_abbr %> that contains, or is expected
+to contain, on-demand <%= vars.product_short %> service instances.
+
+To create a UAA group for a space:
+
+1. Display the space GUID by running:
+
+    ```
+    cf space SPACE-NAME --guid
+    ```
+    Where `SPACE-NAME` is the name of the space.
+
+1. Record the space GUID.
+
+1. Create a UAA group using the space GUID and a RabbitMQ tag by running:
+
+    ```
+    uaac group add p-rabbitmq_SPACE-GUID.tag:RABBITMQ-TAG
+    ```
+    Where:
+    * `SPACE-GUID` is the space GUID.
+    * `RABBITMQ-TAG` must be either `monitoring` or `administrator`. The RabbitMQ tag dictates what
+    the user is permitted to do. For more information about RabbitMQ tags, see
+    the [RabbitMQ documentation](https://www.rabbitmq.com/management.html#permissions)
+
+    For example:
+
+    <pre class="terminal">
+    $ uaac group add p-rabbitmq_64bd9d4d-d2c8-4207-bb76-91a245e67d9d.tag:monitoring
+    </pre>
+
+
+1. If you used the `monitoring` tag, grant additional permissions to allow the user to view resources
+by running:
+
+    ```
+    uaac group add p-rabbitmq_SPACE-GUID.PERMISSION:VHOST-PATTERN/NAME-PATTERN[/ROUTING-KEY-PATTERN]
+    ```
+    Where:
+    * `SPACE-GUID` is the space GUID.
+    * `PERMISSION` is an access permission -- `configure`, `read`, or `write`.
+    * `VHOST-PATTERN` is a wildcard pattern for virtual hosts.
+    * `NAME-PATTERN` is a wildcard pattern for a resource name.
+    * `ROUTING-KEY-PATTERN` is an optional wildcard pattern for a routing key in topic authorization.
+
+    For example:
+
+    <pre class="terminal">
+    $ uaac group add 'p-rabbitmq_64bd9d4d-d2c8-4207-bb76-91a245e67d9d.read:*/*'
+    </pre>
+
+    For more information about RabbitMQ permissions, see the
+    [OAuth plugin documentation](https://github.com/rabbitmq/rabbitmq-auth-backend-oauth2#scope-to-permission-translation)
+    in GitHub.
+
+
+The on-demand broker creates a separate UAA client with scope `p-rabbitmq_SPACE-GUID` for every
+new on-demand service instance.
+When an access token is created, UAA intersects the user groups with the client scopes.
+The intersection of these two fields are scopes that can be populated in the access token.
+
+
+### <a id='configure-users'></a> Configure Users for the RabbitMQ UAA Groups
+
+You can either map external identity provider groups to the RabbitMQ UAA groups or add UAA members
+to the groups.
+Users gain the permissions specified by the RabbitMQ tag provided in the UAA group name.
+
+Do one of the following:
+
+- Map the RabbitMQ UAA groups created above to your LDAP provider group by running the following
+command for every RabbitMQ UAA group:
+
+    ```
+    uaac group map --name "RABBITMQ-UAA-GROUP" "GROUP-DISTINGUISHED-NAME"
+    ```
+    Where:
+    * `RABBITMQ-UAA-GROUP` is the UAA group name created above. For example:
+    `p-rabbitmq_64bd9d4d-d2c8-4207-bb76-91a245e67d9d.tag:monitoring`.
+    * `GROUP-DISTINGUISHED-NAME` is the Distinguished Name (DN) of the LDAP group. For example:
+    `ou=operators,dc=example,dc=com`.
+
+- Map the RabbitMQ UAA groups created above to your SAML IdP group by running the following command
+for every RabbitMQ UAA group:
+
+    ```
+    uaac group map --name "RABBITMQ-UAA-GROUP" "GROUP-NAME" --origin "PROVIDER-NAME"
+    ```
+    Where:
+    * `RABBITMQ-UAA-GROUP` is the UAA group name created above. For example:
+    `p-rabbitmq_64bd9d4d-d2c8-4207-bb76-91a245e67d9d.tag:monitoring`.
+    * `GROUP-NAME` is the name of the group in the SAML IdP.
+    * `PROVIDER-NAME` is the name of the SAML IdP.
+
+- Add UAA members to UAA groups by running:
+
+    ```
+    uaac member add RABBITMQ-UAA-GROUP USERNAME
+    ```
+    Where:
+    * `RABBITMQ-UAA-GROUP` is the UAA group name created above. For example,
+    `p-rabbitmq_64bd9d4d-d2c8-4207-bb76-91a245e67d9d.tag:monitoring`.
+    * `USERNAME` is a UAA group member, such as a Cloud Foundry user.
+
+
+## <a id='configure-oauth'></a> Configure OAuth in <%= vars.ops_manager %>
+
+To configure OAuth in the <%= vars.product_short %> tile:
+
+1. Go to the **Security for On-Demand Plans** section of the <%= vars.product_short %> tile.
+1. There are three different **OAuth Options**: **Not Configured**, **Optional**, and **Enforced**:
+    * **Not Configured** does not use OAuth.<br><br>
+    * **Optional** enforces OAuth for developers accessing the RabbitMQ Management UI. Apps accessing
+    RabbitMQ can use either basic authentication or OAuth.<br><br>
+    * **Enforced** enforces OAuth for both developers and apps to access RabbitMQ. No user is created
+    or returned as part of a service binding or service key creation. To ensure RabbitMQ does not
+    store any user credentials, delete all service bindings and service keys, and then run the
+    **Upgrade All Service Instances** errand after upgrading to `1.21.x` and before enforcing OAuth.
+
+    ![Screenshot of the Security for On-Demand Plans section. This shows the **TLS Options** group
+    of radio buttons, the **OAuth Options** group of radio buttons, and a Save button.
+    The example shows the **Not Configured** radio button selected for TLS and the **Optional**
+    radio button selected for OAuth.](/images/configure-oauth.png)
+    <a href="./images/configure-oauth.png" target="_blank" aria-hidden="true">Click here to view a larger version of the image above</a>
+
+1. Click **Save**.
+1. Go back to **<%= vars.ops_manager %> Installation Dashboard** &gt; **Review Pending Changes**.
+1. Click **Apply Changes** to apply the changes to the <%= vars.product_short %> tile.

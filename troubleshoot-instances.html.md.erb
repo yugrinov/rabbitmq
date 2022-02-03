@@ -1,0 +1,123 @@
+---
+title: Troubleshooting On-Demand Instances
+owner: London Services
+---
+
+This topic provides basic instructions for app developers troubleshooting on-demand <%= vars.product_full %> instances.
+
+## <a id="errors"></a> Troubleshoot Errors
+
+Start here if you are responding to a specific error or error messages.
+
+### <a id="common-errors"></a> Common Service Errors
+
+The following errors occur in multiple services:
+
+<%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
+
+<%= partial vars.path_to_partials + '/services-tshoot/tshoot-no-metrics' %>
+
+
+## <a id="techniques"></a> Techniques for Troubleshooting
+
+See the following sections for troubleshooting techniques when using
+the Cloud Foundry Command-Line Interface (cf CLI) to perform basic
+operations on a <%= vars.product_short %> service instance.
+
+Basic cf CLI operations include `create`, `update`, `bind`, `unbind`, and `delete`.
+
+### <a id="parse-error"></a>Parse a Cloud Foundry (CF) Error Message
+
+<%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
+
+<%= partial vars.path_to_partials + '/services-tshoot/tshoot-tech-parse-error' %>
+
+### <a id="instance"></a> Retrieve Service Instance Information
+
+1. Log into the space containing the instance or failed instance.
+    <pre class="terminal">
+    $ cf login
+    </pre>
+
+1. If you do not know the name of the service instance, run `cf services` to see a listing of all service instances in the space. The service instances are listed in the `name` column.
+    <pre class="terminal">
+    $ cf services
+    Getting services in org my-org / space my-space as user<span>@</span>example.com...
+    OK
+    name          service     plan           bound apps    last operation
+    my-instance   p.rabbitmq  single-node                  create succeeded
+    </pre>
+
+1. Run `cf service SERVICE-INSTANCE-NAME` to retrieve more information about a specific instance.
+
+1. Run `cf service SERVICE-INSTANCE-NAME --guid` to retrieve the GUID of the instance, which is useful for debugging.
+
+### <a id="management-ui-credentials"></a> Retrieve <%= vars.product_short %> Service Instance Credentials
+
+To access the RabbitMQ Management UI for troubleshooting,
+create a new service-key to retrieve <%= vars.product_short %> service instance credentials.
+VMware recommends that you use this key for troubleshooting only, and that you
+delete the key after troubleshooting.
+
+<p class="note">
+  <strong>Note:</strong> If OAuth is enabled, you log in to the RabbitMQ Management UI using your
+  <%= vars.app_runtime_abbr %> credentials. For more information, see
+  <a href="./managing.html#ui-with-oa">Access RabbitMQ Management UI with OAuth Enabled</a>.
+</p>
+
+To retrieve the credentials, do the following:
+
+1. Create a service-key for your <%= vars.product_short %> service instance using the command
+`cf create-service-key INSTANCE-NAME SERVICE-KEY-NAME`.
+
+1. Retrieve the credentials using the command
+`cf service-key INSTANCE-NAME SERVICE-KEY-NAME`.
+
+1. Navigate to the RabbitMQ Management UI using the URL from the service key.
+
+For example:
+<pre class="terminal">
+$ cf create-service-key my-rmq-instance my-key
+Creating service key my-key for service instance my-rmq-instance as admin...
+OK
+$ cf service-key my-rmq-instance my-key
+Getting key my-key for service instance my-rmq-instance as admin...
+{
+  "dashboard_url": "https<scan>:</scan>//rmq-62e5ab21-7b38-44ac-b139-6aa97af01cd7.your.pcf.example.com",
+  ...
+}
+</pre>
+
+To gain admin privileges for the RabbitMQ Management UI, create an admin user for a service instance and obtain user credentials that you can share with other app developers.
+
+Both operators and app developers can use this procedure. See [Create an Admin User for a Service Instance](./install-config.html#admin-service-key) for more information.
+
+
+### <a id="delete_rabbitmq_instance"></a>Delete <%= vars.product_short %> Service Instances
+
+The on-demand broker provides a BOSH command to delete all on-demand broker deployed service instances.
+
+<p class="note warning"><strong>Warning:</strong>
+  This command deletes deployment instances serially. It is very destructive and cannot be undone.
+</p>
+
+To delete all on-demand service instances:
+
+1. Run:
+
+    ```
+    bosh run-errand delete-sub-deployments
+    ```
+
+
+## <a id="kb"></a>Knowledge Base (Community)
+
+<%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
+
+<%= partial vars.path_to_partials + '/services-tshoot/tshoot-kb' %>
+
+## <a id="support"></a>File a Support Ticket
+
+<%# The below partial is in https://github.com/pivotal-cf/docs-partials %>
+
+<%= partial vars.path_to_partials + '/services-tshoot/tshoot-support-dev' %>

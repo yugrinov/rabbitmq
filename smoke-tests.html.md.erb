@@ -1,0 +1,30 @@
+---
+title: Smoke Tests
+owner: London Services
+---
+
+<%= vars.product_full %> runs a set of smoke tests during installation to confirm system health.
+
+## <a id="steps"></a>Smoke Test Steps
+
+The smoke tests perform the following for each available service plan:
+
+1. Targets the org <code>system</code> and creates a space to run the tests.
+1. Deploys an instance of the [CF RabbitMQ Example App](https://github.com/pivotal-cf/rabbit-example-app) to this space
+1. Creates a <%= vars.product_short %> service instance and binds it to the CF RabbitMQ Example App
+1. Checks that the CF RabbitMQ Example App can write to and read from the <%= vars.product_short %> service instance
+1. Cleans up all deployed application and all its service bindings. Finally, the cf space is deleted.
+
+<p class="note"><strong>Note</strong>: Smoke tests fail unless you enable global default application security groups (ASGs).
+   You can enable global default ASGs by binding the ASG to the <code>system</code> org without specifying a space.
+   To enable global default ASGs, use <code>cf bind-running-security-group</code>.
+
+
+## <a id="troubleshooting"></a>Troubleshooting
+
+If errors occur while the smoke tests run, they are summarized at the end of the errand log output.
+Detailed logs can be found where the failure occurs.
+
+When encountering an error when running smoke tests, it can be helpful to search the log for other instances
+of the error summary printed at the end of the tests, for example, <code>Failed to target Cloud Foundry</code>.
+Lookout for <code>TIP: ...</code> in the logs next to any error output for further troubleshooting hints.

@@ -1,0 +1,266 @@
+---
+breadcrumb: VMware Tanzu RabbitMQ for VMs Documentation
+title: Setting Default RabbitMQ Policies for the On&#8209;Demand Service
+owner: London Services
+---
+
+This topic is about setting default policies for the on-demand RabbitMQ service.
+For setting pre-provisioned policies, see
+[Setting Default RabbitMQ Policies for the Pre-Provisioned Service](policies-pp.html).
+
+## <a id="policy"></a> Setting up Policies in On-Demand RabbitMQ
+
+In on-demand RabbitMQ, the operator cannot set a default policy globally for all service plans or
+for a concrete service plan. Instead, it is up to the service instance owner (the Cloud Foundry
+space developer who created the service instance) to define policies and otherwise manage the
+RabbitMQ cluster.
+
+The developer sets up policies in RabbitMQ through the management API or through the UI if they want
+to use a browser.
+To access the management API, the developer needs a username and password in addition to the URL.
+
+To set policies:
+
+1. [Create a Service Instance](#create)
+1. [Obtain the RabbitMQ Management API Credentials](#obtain)
+1. [Declare a RabbitMQ Policy Through the Management API](#declare)
+1. [List Policies](#list-policy)
+
+
+## <a id="create"></a> Create a Service Instance
+
+To create a service instance:
+
+1. Run:
+
+    ```
+    cf create-service p.rabbitmq PLAN SERVICE-INSTANCE-NAME
+    ```
+    Where:
+    * `SERVICE-INSTANCE-NAME` is a name of your choice.
+    * `PLAN` is the plan. For example, `single-node`.
+
+
+## <a id="obtain"></a> Obtain the RabbitMQ Management API Credentials
+
+You can get a RabbitMQ user's credentials through the RabbitMQ Management UI or through the
+cf CLI.
+
+When using the cf CLI, you can get the credentials through a service key or through a service binding.
+Both methods create a RabbitMQ user with the user tags `management` and `policymaker`.
+`policymaker` is the key user tag that permits a developer to create and delete policies.
+
+Choose one of the following methods to obtain the RabbitMQ management API
+credentials `http_api_uri`, `vhost`, `password`, and `username`:
+
+* **Service key method:**
+    1. Create a service key by running:
+
+        ```
+        cf create-service-key SERVICE-INSTANCE-NAME SERVICE-KEY
+        ```
+        Where:
+        * `SERVICE-INSTANCE-NAME` is the name of your service instance.
+        * `SERVICE-KEY` is a name you choose to identify the service key.
+    1. Obtain the credentials by running:
+
+        ```
+        cf service-key SERVICE-INSTANCE-NAME SERVICE-KEY
+        ```
+
+* **Service binding method:**
+    1. Bind your app to your service instance by running:
+
+        ```
+        cf bind-service APP-NAME SERVICE-INSTANCE-NAME
+        ```
+        Where:
+        * `APP-NAME` is the name of your app.
+        * `SERVICE-INSTANCE-NAME` is the name of your service instance.
+    1. Obtain the credentials for the user assigned to the app by running:
+
+        ```
+        cf env APP-NAME
+        ```
+        This prints out information similar to the below:
+
+        <pre class="terminal">
+        ...
+
+        System-Provided:
+        VCAP_SERVICES: {
+         "p.rabbitmq": [
+          {
+            "credentials": {
+              ...
+              "http_api_uri": "https://a9b37966-d67a-448f-b93d-744e3dc95890:hWD38Vvc9wdQAXG8Lh_AAjRI@rmq-a1d3c836-c670-4d22-9191-3e497b68a885.sys.philippinepink.cf-app.com/api/",
+              "password": "xxxxxx",
+              "username": "a9b37966-d67a-448f-b93d-xxxxx",
+              "vhost": "a1d3c836-c670-4d22-9191-3e497b68a885"
+              ...
+            }
+          }
+        }
+        ...
+        </pre>
+
+## <a id="declare"></a> Declare a RabbitMQ Policy Through the Management API
+
+There are at least two methods to declare policies through the management API:
+
+* Using the command line tool rabbitmqadmin, which you can download from `http_api_uri` after
+replacing `api/` in `http_api_uri` with `cli/rabbitmqadmin`. This tool requires Python to be
+installed.
+* Using curl or another HTTP client tool to send HTTP requests directly to the `http_api_uri` you
+obtained from the app or service-key. This method is used in the procedures below.
+
+
+### <a id="prereqs"></a> Prerequisites
+
+The prerequisites for the below procedures are:
+
+1. Install the `curl` command line tool. For more information, see the [curl documentation](https://curl.se/).
+1. Install the `jq` command line tool. For more information, see the [jq documentation](https://stedolan.github.io/jq/)
+in GitHub.
+1. Download copies of the scripts
+[set-policy](https://gist.github.com/ferozjilla/f374a2ba1ae3ebeccbfc316b7ddab486#file-set-policy)
+and
+[list-policies](https://gist.github.com/ferozjilla/f374a2ba1ae3ebeccbfc316b7ddab486#file-list-policies) from GitHub to your local machine.
+
+
+### <a id="ha-policy"></a> Set up an HA Policy
+
+All queues with names that start with `ha.` are mirrored with one replica and with automatic
+synchronization.
+
+The `set-policy` script assumes the app is bound to a single RabbitMQ service instance.
+It accepts these parameters:
+
+1. The app's name
+1. The name of the policy
+1. The policy pattern
+1. The definition
+1. The priority
+
+To set up an HA policy:
+
+1. Set the policy by running:
+
+    ```
+    ./set-policy APP-NAME ha "^ha\." '{"ha-mode":"exactly", "ha-params":2, "ha-sync-mode":"automatic"}' NUMBER
+    ```
+    Where:
+    * `APP-NAME` is your app.
+    * `NUMBER` is the priority value, such as `10`.
+
+    When there are two or more policies that match the same queue or exchange, RabbitMQ compares the
+    priority values of the policies to choose which policy to apply.<br>
+    RabbitMQ assigns `0` to priority when no value is provided.<br>
+    You do not need to assign a value to the priority if you have no overlapping policies.<br><br>
+    For example:
+
+    <pre class="terminal">
+    $ ./set-policy demo-app ha "^ha\." '{"ha-mode":"exactly", "ha-params":2, "ha-sync-mode":"automatic"}' 10
+    </pre>
+
+### <a id="ha-dlx-policy"></a> Set up an HA Plus DLX Policy
+
+All queues named `ha-dlx.*` are mirrored with one replica, with automatic synchronization, and with
+a dead-letter exchange.
+To combine multiple features you must create a policy that combines both. For more information, see
+the [RabbitMQ documentation](https://www.rabbitmq.com/parameters.html#combining-policy-definitions).
+
+To create a policy that combines `ha` and `dlx`:
+
+1. Set the policy by running:
+
+    ```
+    ./set-policy APP-NAME ha-dlx "^ha-dlx\." '{"ha-mode":"exactly", "ha-params":2, "ha-sync-mode":"automatic",  "dead-letter-exchange": "ha-dlx" }'
+    ```
+    Where `APP-NAME` is the name of the app.
+
+    For example:
+    <pre class="terminal">
+    $ ./set-policy demo-app ha-dlx "^ha-dlx\." '{"ha-mode":"exactly", "ha-params":2, "ha-sync-mode":"automatic",  "dead-letter-exchange": "ha-dlx" }'
+    </pre>
+
+
+### <a id="temp-q-policy"></a> Set up a Policy for Temporary Queues
+
+All queues named `temp.*` must have a maximum length and message time to live (TTL).
+
+To create a policy for temporary queues:
+
+1. Set the policy by running:
+
+    ```
+    ./set-policy APP-NAME ha "^temp\." '{"max-length": NUMBER, "overflow": "reject-publish", "message-ttl": MILLISECONDS}'
+    ```
+    Where:
+    * `APP-NAME` is the name of the app.
+    * `NUMBER` is the maximum number of messages, such as `2`.
+    * `MILLISECONDS` is a number of milliseconds, such as `60000`.
+
+    For example:
+    <pre class="terminal">
+    $ ./set-policy demo-app ha "^temp\." '{"max-length": 2, "overflow": "reject-publish", "message-ttl": 60000}'
+    </pre>
+
+When the queue is full, the broker rejects further publishing attempts.
+If the publisher uses the protocol extension Publisher Confirm, it gets a `nack`.
+For more information about Publisher Confirm, see the
+[RabbitMQ documentation](https://www.rabbitmq.com/confirms.html).
+
+
+### <a id="conc-q-policy"></a> Set up a Policy for a Concrete Queue
+
+To set up a policy for a concrete queue:
+
+1. Set the policy by running:
+
+    ```
+    ./set-policy APP-NAME ha "^CONCRETE-QUEUE$" '{"queue-mode":"lazy"}'
+    ```
+    Where:
+    * `APP-NAME` is the name of the app.
+    * `CONCRETE-QUEUE` is the name of the concrete queue, such as `event-log`.
+
+    The queue mode must be `lazy`.
+
+    For example:
+    <pre class="terminal">
+    $ ./set-policy demo-app ha "^event-log$" '{"queue-mode":"lazy"}'
+    </pre>
+
+
+## <a id="list-policy"></a> List Policies
+
+After setting policies, you can list them using the `list-policies` script you
+downloaded in [Prerequisites](#prereqs) above.
+
+To see the policies you created:
+
+1. Run:
+
+    ```
+    ./list-policies APP-NAME
+    ```
+    Where `APP-NAME` is your app.
+    For example:
+    <pre class="terminal">
+    $ ./list-policies demo-app
+    [
+      {
+        "vhost": "a1d3c836-c670-4d22-9191-3e497b68a885",
+        "name": "test",
+        "pattern": "^ha\\.",
+        "apply-to": "all",
+        "definition": {
+          "ha-mode": "exactly",
+          "ha-params": 2,
+          "ha-sync-mode": "automatic"
+        },
+        "priority": 10
+      }
+    ]
+    </pre>

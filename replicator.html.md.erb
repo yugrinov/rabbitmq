@@ -1,0 +1,246 @@
+---
+title: Isolating Clusters with the VMware Tanzu RabbitMQ for VMs Replicator
+owner: Services
+---
+
+<div class="note"><strong>Note: </strong><%= vars.note_pre_provisioned %></div>
+
+## <a id="overview"></a> Overview
+
+<%= vars.product_full %> Replicator is a tool that allows you to install multiple <%= vars.product_short %> tiles
+in a single <%= vars.ops_manager %> environment.
+This lets you run multiple pre-provisioned RabbitMQ clusters that are isolated from each other.
+
+For example, you may want to isolate the cluster serving Spring Cloud Services (SCS) from the cluster serving apps in the Marketplace.
+Or you may want to give a certain team their own dedicated, pre-provisioned cluster that you manage for them.
+For information on how to accomplish these scenarios, see [Common Use Cases](#usecases).
+
+### <a id="usecases"></a> Common Use Cases
+
+The image below illustrates how to isolate SCS on <%= vars.product_short %> from clustered and single node service instances dedicated to different teams.
+In this use case:
+
+* The unreplicated <%= vars.product_short %> tile deploys two types of services: <br>
+	* A pre-provisioned service is used as a backing service for SCS <br>
+	* An on-demand service is used to create three completely isolated single node service instances
+* Two replica tiles are used to create two dedicated pre-provisioned clusters, with each one dedicated to a specific team.
+<br><br><%= image_tag("images/flowchart.png", :alt => "Flowchart showing the step-by-step setup flow in three categories: 'Unreplicated (default) tile', 'Replica Tile for Team 1', and 'Replica Tile for team 2'. 'Unreplicated (default) tile' includes two set-up instruction flows. The first setup flow: 1. Download the tile, 2. Configure the tile and turn off the register service broker errand, 3. Apply Changes, 4. Register the service in the system org in CF. These steps result in a RabbitMQ deployment  called 'Dedicated 3 node RabbitMQ Cluster for SCS. Service Name: p-rabbitmq (not visible in marketplace)'.  The second 'Unreplicated tile flow' is the following: 1. Download the tile. 2. Enable and configure the dedicated instance plan. 3. Apply Changes, which results in the following three RabbitMQ deployments: 1. On-demand RabbitMQ single node. Service name: p.rabbitmq, 2. On-demand RabbitMQ single node. Service name: p.rabbitmq, 3. On-demand RabbitMQ single node. Service name: p.rabbitmq. The second flow category is 'Replica Tile for Team 1' and it has the following setup instruction flow: 1. Download the  tile, 2. Use the Replicator to generate renamed tile (e.g. 'team 1'), 3. Configure the tile and turn off the register service broker errand, 4. Apply Changes, 5. Register the service inn CF so only team 1 has access. These steps result in the RabbitMQ deployment, which is Dedicated 3 node RabbitMQ Cluster for Team 1. Service name: p-rabbitmq-team1. The third and final category is 'Replica Tile for Team 2' and it has the following setup instruction flow: 1. Download tile, 2. Use the Replicator to generate renamed tile (e.g. 'team 2'), 3. Configure the tile and turn off the register service broker errand. 4. Register the service in CF so only team 2 has access. These steps result in the RabbitMQ deployment, which is a dedicated 3 node RabbitMQ cluster for team 2. Service name: p-rabbitmq-team2.") %>
+<a href="./images/flowchart.png" target="_blank" aria-hidden="true">Click here to view a larger version of the image above</a>
+
+These scenarios are explained below in [Running SCS on a Dedicated RabbitMQ Cluster](#scs-isolation) and [Providing a Pre-Provisioned Dedicated Cluster](#dedicated).
+
+### <a id="scs-isolation"></a> Running SCS on a Dedicated RabbitMQ Cluster
+
+Replica <%= vars.product_short %> tiles cannot be used to provide a backing service for Spring Cloud Services (SCS) because SCS expects that
+the service is called `p-rabbitmq`.
+Therefore, if you want to isolate the RabbitMQ cluster that is used by SCS from other tenants,
+you can reserve the unreplicated <%= vars.product_short %> tile for SCS, as shown in the diagram below.
+You can then add replica RabbitMQ clusters for use by apps in the Marketplace.
+
+VMware recommends that you use the unreplicated <%= vars.product_short %> tile solely for SCS to avoid contention between apps
+using SCS, and apps using <%= vars.product_short %> in the Marketplace.
+
+To reserve the unreplicated tile for SCS, turn off the **Broker Registrar** errand to prevent the
+broker from being exposed in the Marketplace.
+For more information, see [Errands](./install-config.html#errands).
+
+To offer RabbitMQ as a cloud messaging service in the Marketplace, create one or several replicas,
+install them in <%= vars.ops_manager %>, and either allow the broker registrar errand to run, or
+[register the service manually using CF](https://docs.pivotal.io/pivotalcf/services/managing-service-brokers.html#register-broker).
+
+### <a id="dedicated"></a> Providing a Pre-Provisioned Dedicated Cluster
+
+To reserve a RabbitMQ cluster for use by a specific team,
+disable the **Broker Registrar** errand in <%= vars.ops_manager %>.
+This prevents service registration in the Marketplace.
+For more information, see [Errands](./install-config.html#errands).
+
+After you deploy the tile, manually expose the service broker to your desired orgs and spaces.
+For instructions, see [Register a Broker](https://docs.pivotal.io/pivotalcf/services/managing-service-brokers.html#register-broker).
+
+### <a id="on-demand"></a> Using Replicas While Offering the On-Demand <%= vars.product_short %> Service
+
+The On-Demand service is not offered in replica tiles, since the purpose of the replicator is
+to create additional pre-provisioned clusters. If you wish to offer on-demand service plans,
+use the unreplicated <%= vars.product_short %> tile as shown in the diagram above.
+
+### <a id="blue-green"></a> Blue-Green Upgrades (Advanced)
+
+In order to do blue-green style upgrades to minimize downtime, you can stand up a new cluster
+and migrate data and users over to the new cluster over a period of time.
+Speak with your Platform Architect about how to enable this workflow.
+
+
+
+## <a id="generate"></a> Generating Replica Tiles
+
+This topic describes how to install the replicator and generate replica tiles of <%= vars.product_short %>.
+
+### <a id="prereqs"></a> Prerequisites
+
+* <%= vars.product_short %> v1.8.x or v1.9.x
+* 2.5 GB of free disk space
+
+### <a id="download"></a> Download the Replicator
+
+The <%= vars.product_short %> Replicator is currently available from [<%= vars.product_network %>](https://network.pivotal.io). Search for and download this archive, and then run the enclosed binary.
+
+### <a id="replica"></a> Generate Replica Tiles
+
+The following is the syntax for generating a replica tile:
+
+```mac
+./rabbitmq-replicator-darwin\
+--name YOUR-DESIRED-TILE-NAME\
+--path PATH-TO-TILE\
+--output DESIRED-FILE-NAME.pivotal
+```
+
+The following are the parameters expected in the above syntax:
+
+| **Parameter** | **Description**                                                                                                                                   |
+|----------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `name`     | The desired unique identifier for the replica tile, which is used to generate manifests, deployment names, and Marketplace name for the service. Only alphanumeric characters and `-` are accepted by the tool. |
+| `path`     | The location of the original, unreplicated, <%= vars.product_short %> source tile that you downloaded                                                                                                         |
+| `output`   | The desired file name and path for the replica tile                                                                                              |
+
+
+### <a id="naming"></a> Naming Conventions in Original and Replica Tiles
+
+The table below shows the naming conventions for various components related to the original <%= vars.product_short %> tile and to the replica tile.
+
+For the purposes of this example, assume that when you generate a replica tile as shown above, in the `name` field you provide the string `finance\`. Then the attributes for the original and replica tiles are as follows:
+
+| **Component**                              | **Name with Original Tile**                         | **Name with Replica Tile**                              |
+|----------------------------------------|------------------------------------------|--------------------------------------------------|
+| Broker name                            | p-rabbitmq                               | p-rabbitmq-finance                               |
+| Broker URL                             | pivotal-rabbitmq-broker.YOUR\_CF\_DOMAIN | pivotal-rabbitmq-broker-finance.YOUR\_CF\_DOMAIN |
+| Service name                    | p-rabbitmq                               | p-rabbitmq-finance                               |
+| URL for the RabbitMQ Management UI | pivotal-rabbitmq.YOUR\_CF\_DOMAIN        | pivotal-rabbitmq-finance.YOUR\_CF\_DOMAIN        |
+| Tile display name in <%= vars.ops_manager %>                     | <%= vars.product_short %>                                | <%= vars.product_short %> (finance)                               |
+| Tile name used internally by <%= vars.ops_manager %>                             | p-rabbitmq                               | p-rabbitmq-finance                               |
+| Metrics/Logging Origin                 | p-rabbitmq                               | p-rabbitmq-finance                               |
+
+
+
+## <a id="install"></a> Installing Replica Tiles
+
+After you have generated a replica tile, you can upload it to <%= vars.ops_manager %> as you would any other tile.
+After you have uploaded it, follow the instructions for [Installing and Configuring <%= vars.product_short %> as a
+Pre-Provisioned Service](./install-config-pp.html).
+The On-Demand service is not offered on replica tiles.
+
+## <a id="org-access"></a> Limiting Access to Replica Tiles to Specific Orgs
+
+When you replicate <%= vars.product_short %>, the replica tile has the **Broker Registrar** errand set to **On** by default.
+This field appears in the **Errands** tab in the tile:
+<br><br>![Screenshot of the RabbitMQ tile. Header is 'Errands'.
+Description says 'Errands are scripts that run at designated points durinng an installation.'
+A subheader says, 'Post-Deploy Errands'. Underneath is two dropdown fields called
+'Pre-Provisioned Broker Registrar' and 'Pre-Provisioned Smoke tests'. Both fields are
+set to 'Default (On)'.](/images/broker_registrar_errand.png)
+
+With any tile, if the **Broker Registrar** errand is set to **On**, it runs automatically when you finish installing the tile
+and causes the tile to be available to all CF orgs.
+
+If you want to limit access to the tile to a specific org, follow these steps:
+
+1. Set the broker registrar errand to **Off**, and apply your changes.
+
+1. Manually register the tile with a specific CF org using the following command.
+   See the above table for `BROKER_NAME`, `BROKER_URL`, and `SERVICE_NAME`:
+
+	```
+	cf create-service-broker BROKER_NAME BROKER_USERNAME BROKER_PASSWORD BROKER_URL
+	```
+
+1. To give access to the org, use the following command and repeat for each additional org:
+
+	```
+	cf enable-service-access SERVICE_NAME -o ORG_NAME
+	```
+
+## <a id="upgrading"></a> Upgrading Replica Tiles
+
+You can upgrade replica tiles like regular tiles with one important difference.
+You must generate a replica of the newer version of the <%= vars.product_short %> tile, using the replicator,
+and give the new replica the same `name` as the existing replica.
+This is shown in the example workflow below.
+
+### Example of an In-Place Upgrade of a Replica
+
+Suppose you used the replicator to generate a replica of v1 of the <%= vars.product_short %> tile,
+with the `name` **trading-team**, and you installed it in <%= vars.ops_manager %>.
+Here is the sample replicator command you used for the initial installation:
+
+```mac
+./rabbitmq-replicator-darwin\
+--name trading-team\
+--path /download/p-rabbitmq-v1.pivotal\
+--output /output/p-rabbitmq-v1-trading-team.pivotal
+```
+
+To upgrade to v2, follow these steps:
+
+1. Download and unzip the new <%= vars.product_short %> Tile Replicator from [<%= vars.product_network %>](https://network.pivotal.io/products/p-rabbitmq/).
+You must download the version of Tile Replicator that corresponds with the
+version of the <%= vars.product_short %> Tile you want to replicate.
+
+1. Find the plan UUID and Service UUID for the service plan you want to update.<br>
+To do this, you can use the CF API. Run the following command, then search the
+result for the section about the service plan you want:
+
+    ```
+    cf curl /v2/service_plans
+    ```
+<br>
+    The result is similar to the following, with some extra properties:
+
+    <pre class="terminal">
+      {
+         "metadata": {
+            "guid": "a0a2fae9-e5de-47f5-b2b3-23cf07ff6142",
+         },
+         "entity": {
+            "name": "single-node",
+            "service_guid": "3e3a9413-50bd-4c76-a226-8721b0d2b3d7",
+         }
+      }
+    </pre>
+    - The plan UUID is found under `metadata`, `guid`.
+    - The service UUID is found under `entity`, `service_guid`.
+
+1. Run the replicator command below to create the replica:
+
+    ```mac
+      ./rabbitmq-replicator-darwin\
+      --name NAME-OF-EXISTING-REPLICA \
+      --path PATH-TO-NEW-TILE \
+      --plan-uuid PLAN-UUID \
+      --service-uuid SERVICE-UUID \
+      --output /output/p-rabbitmq-v2-trading-team.pivotal
+    ```
+    Where:<br>
+      - `NAME-OF-EXISTING-REPLICA` must be the same as the name used for the existing replica.
+      This is **trading-team** in this example.
+      - `PATH-TO-NEW-TILE` is the path to the new <%= vars.product_short %> v2 tile.
+      - `PLAN-UUID` is the plan UUID found in Step 2.
+      - `SERVICE-UUID` is the service UUID found in Step 2.
+
+    Specifying the parameters `--plan-uuid` and `--service-uuid` ensures the new
+    replica updates the existing service offering and plans.
+
+1. After you have the replica tile **p-rabbitmq-v2-trading-team.pivotal**, upload it to <%= vars.ops_manager %>.
+This upgrades the v1 replica tile in place.
+
+
+
+
+You can then proceed with upgrading the cluster.
+
+If you want to do a blue-green style upgrade, see [Blue-Green Upgrades](#blue-green).
+
+
+## <a id="limitations"></a> Limitations
+
+* The On-Demand service is not offered on replica tiles.
